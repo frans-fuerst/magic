@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# Copyright (C) 2016 Frans Fuerst
 
 
 """ hl - highlight matchings
+
+    todo:
+        hl [-i] [-p] <pattern> /path/to/textfile
+        <command> | hl [-f] [-i] <pattern>
 """
+
+class col:
+    INV = "\033[7m"
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    REVERSE = '\033[7m'
+    RESET = '\033[0m'
+
+    FG_RED = '\033[31m'
 
 
 """
@@ -67,6 +83,74 @@ http://stackoverflow.com/questions/287871/print-in-terminal-with-colors-using-py
 https://pypi.python.org/pypi/colorama
 """
 
+import sys
+import optparse
+import subprocess
+import select
+import time
+import logging as log
+
+
+def output(line, pattern):
+    if pattern in line:
+        print(col.BOLD + col.FG_RED + line)
+    else:
+        print(col.RESET + line)
+
+
+def main():
+
+#    parser = optparse.OptionParser()
+#    parser.add_option("-p", "--pattern", dest="pattern",
+#                      default="",
+#                      help="pattern to look for", metavar="STRING")
+#
+#    (options, args) = parser.parse_args()
+    args = sys.argv[1:]
+
+    if not len(args) > 0:
+        print('no pattern given')
+        return -1
+
+    if not len(args) > 1:
+        print('no command given')
+        return -1
+
+    _pattern = args[0]
+    _command = args[1:]
+    
+    log.warn('test pattern: "%s"', _pattern)
+    log.warn('command:      %s', _command)
+
+    _process = subprocess.Popen(
+        _command,
+        stdout=subprocess.PIPE,
+        bufsize=0)
+
+    _to_poll = [_process.stdout.fileno()]
+
+    while True:
+        if _process.poll() is not None:
+            for l in _process.stdout.readlines():
+                output(l, _pattern)
+            break
+
+        _ret = select.select(_to_poll, [], [])
+        output(_process.stdout.readline().decode().strip('\n'), _pattern)
+
+    return _process.returncode
+
+
+def test_process():
+    while True:
+        print('pattern 123')
+        time.sleep(.5)
+        print('bad pattern')
+        time.sleep(.5)
+    return 0
+
 if __name__ == '__main__':
-    print('servus')
+    if sys.argv[1:] == ['--test-process']:
+        sys.exit(test_process())
+    sys.exit(main())
 
