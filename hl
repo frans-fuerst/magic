@@ -93,10 +93,36 @@ import logging as log
 
 def output(line, pattern):
     if pattern in line:
-        print(col.BOLD + col.FG_RED + line)
+        sys.stdout.write(col.BOLD + col.FG_RED + line)
     else:
-        print(col.RESET + line)
+        sys.stdout.write(col.RESET + line)
 
+
+def start_process(command, pattern):
+    log.warn('command:      %s', command)
+
+    _process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        bufsize=0)
+
+    _to_poll = [_process.stdout.fileno()]
+
+    while True:
+        if _process.poll() is not None:
+            for l in _process.stdout.readlines():
+                output(l.decode(), pattern)
+            break
+
+        _ret = select.select(_to_poll, [], [])
+        output(_process.stdout.readline().decode(), pattern)
+
+    return _process.returncode
+
+def read_stdin(pattern):
+
+    for line in sys.stdin:
+        output(line, pattern)
 
 def main():
 
@@ -112,33 +138,16 @@ def main():
         print('no pattern given')
         return -1
 
-    if not len(args) > 1:
-        print('no command given')
-        return -1
-
     _pattern = args[0]
-    _command = args[1:]
+
+    _command = args[1:] if len(args) > 1 else None
     
     log.warn('test pattern: "%s"', _pattern)
-    log.warn('command:      %s', _command)
 
-    _process = subprocess.Popen(
-        _command,
-        stdout=subprocess.PIPE,
-        bufsize=0)
-
-    _to_poll = [_process.stdout.fileno()]
-
-    while True:
-        if _process.poll() is not None:
-            for l in _process.stdout.readlines():
-                output(l, _pattern)
-            break
-
-        _ret = select.select(_to_poll, [], [])
-        output(_process.stdout.readline().decode().strip('\n'), _pattern)
-
-    return _process.returncode
+    if _command:
+        return start_process(_command, _pattern)
+    else:
+        read_stdin(_pattern)
 
 
 def test_process():
@@ -150,7 +159,11 @@ def test_process():
     return 0
 
 if __name__ == '__main__':
-    if sys.argv[1:] == ['--test-process']:
-        sys.exit(test_process())
-    sys.exit(main())
+    try:
+        if sys.argv[1:] == ['--test-process']:
+            sys.exit(test_process())
+
+        sys.exit(main())
+    except KeyboardInterrupt:
+        pass
 
