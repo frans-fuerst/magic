@@ -9,6 +9,14 @@
     todo:
         hl [-i] [-p] <pattern> /path/to/textfile
         <command> | hl [-f] [-i] <pattern>
+        [ ] support -f file poll
+        [ ] support -i case insensitivity
+        [ ] support -v invert
+        [ ] support
+        [ ] support regex
+        [ ] check for pipe
+        [ ] python2/3
+        [ ] setup for PIP
 """
 
 class col:
@@ -91,14 +99,14 @@ import time
 import logging as log
 
 
-def output(line, pattern):
-    if pattern in line:
+def output(line, args):
+    if args.pattern in line:
         sys.stdout.write(col.BOLD + col.FG_RED + line)
     else:
         sys.stdout.write(col.RESET + line)
 
 
-def start_process(command, pattern):
+def start_process(command, args):
     log.warn('command:      %s', command)
 
     _process = subprocess.Popen(
@@ -111,43 +119,65 @@ def start_process(command, pattern):
     while True:
         if _process.poll() is not None:
             for l in _process.stdout.readlines():
-                output(l.decode(), pattern)
+                output(l.decode(), args)
             break
 
         _ret = select.select(_to_poll, [], [])
-        output(_process.stdout.readline().decode(), pattern)
+        output(_process.stdout.readline().decode(), args)
 
     return _process.returncode
 
-def read_stdin(pattern):
+def read_stdin(args):
 
     for line in sys.stdin:
-        output(line, pattern)
+        output(line, args)
 
 def main():
 
-#    parser = optparse.OptionParser()
-#    parser.add_option("-p", "--pattern", dest="pattern",
-#                      default="",
-#                      help="pattern to look for", metavar="STRING")
-#
-#    (options, args) = parser.parse_args()
-    args = sys.argv[1:]
+    # we should use argparse here but I don't know how
+    # to split program arguments from the program to run
+    class args:
+        pass
+    args = args()
+    _args = sys.argv[1:]
+    args.case_insensitiv = False
+    args.invert = False
+    args.file_poll = False
+    args.pattern = None
+    while True:
+        if len(_args) == 0:
+            break
+        elif _args[0] == '-i':
+            args.case_insensitiv = True
+            _args = _args[1:]
+        elif _args[0] == '-v':
+            args.invert = True
+            _args = _args[1:]
+        elif _args[0] == '-p':
+            args.pattern = _args[1]
+            _args = _args[2:]
+        elif _args[0] == '-f':
+            args.file_poll = True
+            _args = _args[1:]
+        else:
+            break
 
-    if not len(args) > 0:
-        print('no pattern given')
-        return -1
+    if args.pattern is None:
+        if len(_args) == 0:
+            print('no pattern given')
+            return -1
+        else:
+            args.pattern = _args[0]
+            _args = _args[1:]
 
-    _pattern = args[0]
+    _command = _args if len(_args) > 1 else None
 
-    _command = args[1:] if len(args) > 1 else None
-    
-    log.warn('test pattern: "%s"', _pattern)
+    log.warn('test pattern: "%s"', args.pattern)
 
     if _command:
-        return start_process(_command, _pattern)
+        return start_process(_command, args)
     else:
-        read_stdin(_pattern)
+        read_stdin(args)
 
 
 def test_process():
