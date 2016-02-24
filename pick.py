@@ -9,16 +9,16 @@
     todo:
         pick [-i] [-p] <pattern> /path/to/textfile
         <command> | hl [-f] [-i] <pattern>
-        [ ] rename to 'pick'
+        [x] rename to 'pick'
         [ ] highlight findings
+        [ ] check for pipe
+        [ ] support -i case insensitivity
         [ ] support time measurement
         [ ] show status line with pattern and timing
         [ ] support -l logging (parse /var/log/*)
-        [ ] support -f file poll
-        [ ] support -i case insensitivity
         [ ] support -v invert
+        [ ] support -f file poll (can be substituted with tail -f | pick)
         [ ] support regex
-        [ ] check for pipe
         [ ] python2/3
         [ ] setup for PIP
 """
