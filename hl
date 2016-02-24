@@ -4,30 +4,24 @@
 # Copyright (C) 2016 Frans Fuerst
 
 
-""" hl - highlight matchings
+""" pick - highlight matchings
 
     todo:
-        hl [-i] [-p] <pattern> /path/to/textfile
+        pick [-i] [-p] <pattern> /path/to/textfile
         <command> | hl [-f] [-i] <pattern>
+        [ ] rename to 'pick'
+        [ ] highlight findings
+        [ ] support time measurement
+        [ ] show status line with pattern and timing
+        [ ] support -l logging (parse /var/log/*)
         [ ] support -f file poll
         [ ] support -i case insensitivity
         [ ] support -v invert
-        [ ] support
         [ ] support regex
         [ ] check for pipe
         [ ] python2/3
         [ ] setup for PIP
 """
-
-class col:
-    INV = "\033[7m"
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
-    REVERSE = '\033[7m'
-    RESET = '\033[0m'
-
-    FG_RED = '\033[31m'
-
 
 """
 from http://misc.flogisoft.com/bash/tip_colors_and_formatting:
@@ -92,45 +86,67 @@ https://pypi.python.org/pypi/colorama
 """
 
 import sys
-import optparse
 import subprocess
 import select
 import time
 import logging as log
 
+class col:
+    INVERT = "\033[7m"
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    REVERSE = '\033[7m'
+    RESET = '\033[0m'
 
-def output(line, args):
-    if args.pattern in line:
-        sys.stdout.write(col.BOLD + col.FG_RED + line)
-    else:
-        sys.stdout.write(col.RESET + line)
+    FG_DEFAULT = '\033[39m'
+    FG_RED = '\033[31m'
 
+class unbuffered(object):
+    def __init__(self, stream):
+        self.stream = stream
+    def write(self, data):
+        self.stream.write(data)
+        self.stream.flush()
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
 
-def start_process(command, args):
-    log.warn('command:      %s', command)
+class picker:
+    def __init__(self, args):
+        self._args = args
+        self._out = unbuffered(sys.stdout.detach())
+        self._pattern = args.pattern.split('|')
 
-    _process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        bufsize=0)
+    def output(self, line):
+        for p in self._pattern:
+            if p in line:
+                self._out.write((col.INVERT + line).encode('utf-8'))
+                return
+        self._out.write((col.RESET + line).encode('utf-8'))
 
-    _to_poll = [_process.stdout.fileno()]
+    def start_process(self, command):
+        log.warning('command:      %s', command)
 
-    while True:
-        if _process.poll() is not None:
-            for l in _process.stdout.readlines():
-                output(l.decode(), args)
-            break
+        _process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            bufsize=0)
 
-        _ret = select.select(_to_poll, [], [])
-        output(_process.stdout.readline().decode(), args)
+        _to_poll = [_process.stdout.fileno()]
 
-    return _process.returncode
+        while True:
+            if _process.poll() is not None:
+                for l in _process.stdout.readlines():
+                    self.output(l.decode())
+                break
 
-def read_stdin(args):
+            if _process.stdout.fileno() in select.select(_to_poll, [], [])[0]:
+                self.output(_process.stdout.readline().decode())
 
-    for line in sys.stdin:
-        output(line, args)
+        return _process.returncode
+
+    def read_stdin(self):
+        for line in sys.stdin.detach():
+            self.output(line.decode('utf-8'))
 
 def main():
 
@@ -172,25 +188,54 @@ def main():
 
     _command = _args if len(_args) > 1 else None
 
-    log.warn('test pattern: "%s"', args.pattern)
+    log.warning('test pattern: "%s"', args.pattern)
 
+    _picker = picker(args)
     if _command:
-        return start_process(_command, args)
+        return _picker.start_process(_command)
     else:
-        read_stdin(args)
+        return _picker.read_stdin()
 
+def write_iostats():
+    # http://stackoverflow.com/questions/13442574
+    # http://stackoverflow.com/questions/4265057
+    import stat, os
+    pipe = sys.stdout
+    mode = os.fstat(pipe.fileno()).st_mode
+    log.warning("stdout isatty:       %s",
+                "True" if pipe.isatty() else "False")
+    log.warning("stdout S_ISFIFO:     %s",
+                "True" if stat.S_ISFIFO(mode) else "False")
+    log.warning("stdout S_ISREG:      %s",
+                "True" if stat.S_ISREG(mode) else "False")
+
+    pipe = sys.stdin
+    mode = os.fstat(pipe.fileno()).st_mode
+    log.warning("stdin isatty:        %s",
+                "True" if pipe.isatty() else "False")
+    log.warning("stdin S_ISFIFO:      %s",
+                "True" if stat.S_ISFIFO(mode) else "False")
+    log.warning("stdin S_ISREG:       %s",
+                "True" if stat.S_ISREG(mode) else "False")
+
+    log.warning("TERM is set:         %s",
+                "True" if 'TERM' in os.environ else "False")
 
 def test_process():
     while True:
         print('pattern 123')
         time.sleep(.5)
+        print('pattern 321')
+        time.sleep(.5)
         print('bad pattern')
         time.sleep(.5)
     return 0
 
+
 if __name__ == '__main__':
     try:
         if sys.argv[1:] == ['--test-process']:
+            sys.stdout = unbuffered(sys.stdout)
             sys.exit(test_process())
 
         sys.exit(main())
