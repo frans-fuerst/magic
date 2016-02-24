@@ -10,7 +10,7 @@
         pick [-i] [-p] <pattern> /path/to/textfile
         <command> | hl [-f] [-i] <pattern>
         [x] rename to 'pick'
-        [ ] highlight findings
+        [x] highlight findings
         [ ] check for pipe
         [ ] support -i case insensitivity
         [ ] support time measurement
@@ -92,7 +92,7 @@ import time
 import logging as log
 
 class col:
-    INVERT = "\033[7m"
+    INVERT = '\033[7m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
     REVERSE = '\033[7m'
@@ -100,6 +100,9 @@ class col:
 
     FG_DEFAULT = '\033[39m'
     FG_RED = '\033[31m'
+
+    BG_DEFAULT = '\033[49m'
+    BG_RED = '\033[41m'
 
 class unbuffered(object):
     def __init__(self, stream):
@@ -110,18 +113,29 @@ class unbuffered(object):
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
 
+
 class picker:
     def __init__(self, args):
         self._args = args
         self._out = unbuffered(sys.stdout.detach())
         self._pattern = args.pattern.split('|')
 
-    def output(self, line):
+    def _colorize(self, line: str):
         for p in self._pattern:
-            if p in line:
-                self._out.write((col.INVERT + line).encode('utf-8'))
+            line = line.replace(p, col.BG_RED + p + col.BG_DEFAULT)
+        return line
+
+    def output(self, line):
+        _line = line.decode()
+        for p in self._pattern:
+            if p in _line:
+                if not self._args.invert:
+                    line = self._colorize(_line).encode('utf-8')
+                self._out.write(col.INVERT.encode())
+                self._out.write(line)
+                self._out.write(col.RESET.encode())
                 return
-        self._out.write((col.RESET + line).encode('utf-8'))
+        self._out.write(line)
 
     def start_process(self, command):
         log.warning('command:      %s', command)
@@ -136,17 +150,17 @@ class picker:
         while True:
             if _process.poll() is not None:
                 for l in _process.stdout.readlines():
-                    self.output(l.decode())
+                    self.output(l)
                 break
 
             if _process.stdout.fileno() in select.select(_to_poll, [], [])[0]:
-                self.output(_process.stdout.readline().decode())
+                self.output(_process.stdout.readline())
 
         return _process.returncode
 
     def read_stdin(self):
         for line in sys.stdin.detach():
-            self.output(line.decode('utf-8'))
+            self.output(line)
 
 def main():
 
