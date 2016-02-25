@@ -6,13 +6,22 @@
 
 """ pick - highlight matchings
 
+    like `grep` `pick` is intended to find occurrences of pattern in a stream of
+    text but in comparison to `grep` `pick` is used to highlight and to show the
+    frequency of a pattern.
+
+    run
+        pick [-i] [-p] <pattern> <-c /path/to/executable | </path/to/textfile> >
+        or
+        <command> | pick [-i] [-p] <pattern>
+
     todo:
         pick [-i] [-p] <pattern> /path/to/textfile
         <command> | hl [-f] [-i] <pattern>
         [x] rename to 'pick'
         [x] highlight findings
-        [ ] check for pipe
         [ ] support -i case insensitivity
+        [ ] check for pipe
         [ ] support time measurement
         [ ] show status line with pattern and timing
         [ ] support -l logging (parse /var/log/*)
@@ -89,6 +98,7 @@ import sys
 import subprocess
 import select
 import time
+import re
 import logging as log
 
 class col:
@@ -116,23 +126,39 @@ class unbuffered(object):
 
 class picker:
     def __init__(self, args):
-        self._args = args
+        # self._args = args
+        self._invert = args.invert
+        self._case_insensitive = args.case_insensitive
+        # save original and optionally lowercase version of search substrings
+        if args.case_insensitive:
+            self._pattern = tuple((p, p.lower()) for p in args.pattern.split('|'))
+        else:
+            self._pattern = tuple((p, p) for p in args.pattern.split('|'))
         self._out = unbuffered(sys.stdout.detach())
-        self._pattern = args.pattern.split('|')
 
     def _colorize(self, line: str):
-        for p in self._pattern:
-            line = line.replace(p, col.BG_RED + p + col.BG_DEFAULT)
+        if self._case_insensitive:
+            for p, _ in self._pattern:
+                line = self._case_insensitive_replace(line, p, col.BG_RED + p + col.BG_DEFAULT)
+        else:
+            for p, _ in self._pattern:
+                line = line.replace(p, col.BG_RED + p + col.BG_DEFAULT)
         return line
 
+    def _case_insensitive_replace(self, string, str1, str2):
+        _re = re.compile(re.escape(str1), re.IGNORECASE)
+        return _re.sub(str2, string)
+
     def output(self, line):
-        _line = line.decode()
-        for p in self._pattern:
-            if p in _line:
-                if not self._args.invert:
-                    line = self._colorize(_line).encode('utf-8')
+        _decoded = line.decode()
+        _search_line = _decoded.lower() if self._case_insensitive else _decoded
+
+        for _, p in self._pattern:
+            if p in _search_line:
+                if not self._invert:
+                    _decoded = self._colorize(_decoded)
                 self._out.write(col.INVERT.encode())
-                self._out.write(line)
+                self._out.write(_decoded.encode('utf-8'))
                 self._out.write(col.RESET.encode())
                 return
         self._out.write(line)
@@ -170,7 +196,7 @@ def main():
         pass
     args = args()
     _args = sys.argv[1:]
-    args.case_insensitiv = False
+    args.case_insensitive = False
     args.invert = False
     args.file_poll = False
     args.pattern = None
@@ -178,7 +204,7 @@ def main():
         if len(_args) == 0:
             break
         elif _args[0] == '-i':
-            args.case_insensitiv = True
+            args.case_insensitive = True
             _args = _args[1:]
         elif _args[0] == '-v':
             args.invert = True
@@ -239,7 +265,7 @@ def test_process():
     while True:
         print('pattern 123')
         time.sleep(.5)
-        print('pattern 321')
+        print('Pattern 321')
         time.sleep(.5)
         print('bad pattern')
         time.sleep(.5)
