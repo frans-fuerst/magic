@@ -21,8 +21,8 @@
         [x] rename to 'pick'
         [x] highlight findings
         [x] support -i case insensitivity
+        [x] support time measurement
         [ ] check for pipe
-        [ ] support time measurement
         [ ] show status line with pattern and timing
         [ ] support -l logging (parse /var/log/*)
         [ ] support -v invert
