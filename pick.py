@@ -20,7 +20,7 @@
         <command> | hl [-f] [-i] <pattern>
         [x] rename to 'pick'
         [x] highlight findings
-        [ ] support -i case insensitivity
+        [x] support -i case insensitivity
         [ ] check for pipe
         [ ] support time measurement
         [ ] show status line with pattern and timing
@@ -110,9 +110,15 @@ class col:
 
     FG_DEFAULT = '\033[39m'
     FG_RED = '\033[31m'
+    FG_GREEN = '\033[32m'
+    FG_YELLOW = '\033[33m'
+    FG_BLUE = '\033[31m'
 
     BG_DEFAULT = '\033[49m'
     BG_RED = '\033[41m'
+    BG_YELLOW = '\033[42m'
+    BG_GREEN = '\033[43m'
+    BG_BLUE = '\033[44m'
 
 class unbuffered(object):
     def __init__(self, stream):
@@ -125,8 +131,10 @@ class unbuffered(object):
 
 
 class picker:
+    class error(Exception):
+        pass
+
     def __init__(self, args):
-        # self._args = args
         self._invert = args.invert
         self._case_insensitive = args.case_insensitive
         # save original and optionally lowercase version of search substrings
@@ -134,12 +142,19 @@ class picker:
             self._pattern = tuple((p, p.lower()) for p in args.pattern.split('|'))
         else:
             self._pattern = tuple((p, p) for p in args.pattern.split('|'))
+        self._freq_t_last = None
+        self._freq_baseline = None
+        self._occurrence_count = 0
+        self._print_stats = args.print_stats
+        if len(self._pattern) > 1 and self._print_stats:
+            raise picker.error('stats currently work only with single pattern')
         self._out = unbuffered(sys.stdout.detach())
 
     def _colorize(self, line: str):
         if self._case_insensitive:
             for p, _ in self._pattern:
-                line = self._case_insensitive_replace(line, p, col.BG_RED + p + col.BG_DEFAULT)
+                line = self._case_insensitive_replace(
+                    line, p, col.BG_RED + p + col.BG_DEFAULT)
         else:
             for p, _ in self._pattern:
                 line = line.replace(p, col.BG_RED + p + col.BG_DEFAULT)
@@ -158,10 +173,33 @@ class picker:
                 if not self._invert:
                     _decoded = self._colorize(_decoded)
                 self._out.write(col.INVERT.encode())
-                self._out.write(_decoded.encode('utf-8'))
+                self._out.write(_decoded.encode())
                 self._out.write(col.RESET.encode())
+                if self._print_stats:
+                    self._out.write(col.BOLD.encode())
+                    _stats = self._stats_str()
+                    if _stats:
+                        self._out.write(
+                            (col.FG_GREEN + _stats + col.FG_DEFAULT).encode())
+                        self._out.write('\n'.encode())
+                    self._out.write(col.RESET.encode())
                 return
         self._out.write(line)
+
+    def _stats_str(self):
+        self._occurrence_count += 1
+        _t = time.time()
+        if self._freq_t_last is None:
+            self._freq_t_last = _t
+            return None
+        _dur = _t - self._freq_t_last
+        if self._freq_baseline is None:
+            self._freq_baseline = _dur
+        else:
+            self._freq_baseline = self._freq_baseline * 0.9 + _dur * 0.1
+        self._freq_t_last = _t
+        return ('>>> count: %d, dT: %.3f, avg: %.3f'
+                % (self._occurrence_count, _dur, self._freq_baseline))
 
     def start_process(self, command):
         log.warning('command:      %s', command)
@@ -198,7 +236,7 @@ def main():
     _args = sys.argv[1:]
     args.case_insensitive = False
     args.invert = False
-    args.file_poll = False
+    args.print_stats = False
     args.pattern = None
     while True:
         if len(_args) == 0:
@@ -212,8 +250,8 @@ def main():
         elif _args[0] == '-p':
             args.pattern = _args[1]
             _args = _args[2:]
-        elif _args[0] == '-f':
-            args.file_poll = True
+        elif _args[0] == '-s':
+            args.print_stats = True
             _args = _args[1:]
         else:
             break
@@ -279,6 +317,8 @@ if __name__ == '__main__':
             sys.exit(test_process())
 
         sys.exit(main())
+    except picker.error as ex:
+        print("ERROR: %s" % ex)
     except KeyboardInterrupt:
         pass
 
